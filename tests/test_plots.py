@@ -36,6 +36,16 @@ def test_dist_plot_one_box_per_sample(data1):
     assert len(fig.axes[0].patches) == n_samples
 
 
+def test_dist_plot_legend_is_outside_axes(data1):
+    fig = olink_dist_plot(clean_npx(data1))
+    assert fig.axes[0].get_legend() is None
+    assert len(fig.legends) == 1
+    fig.canvas.draw()
+    axes_right = max(ax.get_window_extent().x1 for ax in fig.axes)
+    legend_box = fig.legends[0].get_window_extent()
+    assert legend_box.x0 >= axes_right - 1
+
+
 def test_volcano_plot_from_ttest(data1):
     cleaned = clean_npx(data1)
     ttest = olink_ttest(cleaned, variable="Treatment")

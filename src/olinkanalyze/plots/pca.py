@@ -11,7 +11,7 @@ from matplotlib.figure import Figure
 
 from olinkanalyze._utils import col, require_dataframe
 from olinkanalyze.plots.colors import olink_pal
-from olinkanalyze.plots.theme import apply_theme_to_figure
+from olinkanalyze.plots.theme import apply_theme_to_figure, figure_legend_outside
 from olinkanalyze.qc.clean_npx import prepare_plot_npx
 
 
@@ -60,7 +60,7 @@ def olink_pca_plot(
         color_values = plot_df.groupby(sample_col, sort=False, observed=True)[color_g].first()
         color_values = color_values.reindex(filled.index)
 
-    fig, ax = plt.subplots(figsize=(6.5, 5.5))
+    fig, ax = plt.subplots(figsize=(6.5, 5.5), layout="constrained")
     if color_values is None:
         ax.scatter(scores[:, 0], scores[:, 1], s=36, color=olink_pal(n=1)[0], edgecolor="none")
     else:
@@ -77,7 +77,8 @@ def olink_pca_plot(
                 label=str(level),
                 edgecolor="none",
             )
-        ax.legend(title=color_g, frameon=False)
+        handles, labels = ax.get_legend_handles_labels()
+        figure_legend_outside(fig, handles, labels, title=color_g)
 
     if n_loadings > 0:
         loading = pd.Series(np.abs(vt[0]), index=filled.columns).sort_values(ascending=False)

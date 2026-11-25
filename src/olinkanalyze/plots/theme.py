@@ -29,5 +29,19 @@ def set_plot_theme(ax: Axes | None = None, font: str = "DejaVu Sans") -> Axes:
 def apply_theme_to_figure(fig: Figure, font: str = "DejaVu Sans") -> Figure:
     for ax in fig.axes:
         set_plot_theme(ax, font=font)
-    fig.tight_layout()
+    if not fig.get_constrained_layout():
+        fig.tight_layout()
     return fig
+
+
+def figure_legend_outside(fig: Figure, *args, **kwargs):
+    """Place a figure legend to the right of the axes, not on top of the data.
+
+    Requires ``layout="constrained"`` on the figure. ``loc="outside right"``
+    is a figure-legend option in matplotlib 3.7+.
+    """
+    kwargs.setdefault("loc", "outside right")
+    kwargs.setdefault("frameon", False)
+    kwargs.setdefault("fontsize", 8)
+    kwargs.setdefault("title_fontsize", 9)
+    return fig.legend(*args, **kwargs)

@@ -13,7 +13,7 @@ from matplotlib.patches import Patch
 
 from olinkanalyze._utils import col, require_dataframe, series_str_contains
 from olinkanalyze.plots.colors import olink_pal
-from olinkanalyze.plots.theme import apply_theme_to_figure
+from olinkanalyze.plots.theme import apply_theme_to_figure, figure_legend_outside
 from olinkanalyze.qc.clean_npx import prepare_plot_npx
 
 
@@ -41,7 +41,13 @@ def olink_dist_plot(
 
     panels = list(plot_df[panel_col].dropna().unique())
     n_panels = max(len(panels), 1)
-    fig, axes = plt.subplots(1, n_panels, figsize=(5.5 * n_panels, 4.5), squeeze=False)
+    fig, axes = plt.subplots(
+        1,
+        n_panels,
+        figsize=(5.5 * n_panels, 4.5),
+        squeeze=False,
+        layout="constrained",
+    )
     hue_levels = [level for level in pd.unique(plot_df[color_g]) if pd.notna(level)]
     palette = olink_pal(n=max(len(hue_levels), 1))
     palette_map = {level: palette[idx] for idx, level in enumerate(hue_levels)}
@@ -56,12 +62,18 @@ def olink_dist_plot(
             color_g=color_g,
             palette_map=palette_map,
             default_color=palette[0],
-            show_legend=panel == panels[0],
         )
         ax.set_title(str(panel))
         ax.set_xlabel("Samples")
         ax.set_ylabel(quant_col)
         ax.tick_params(axis="x", labelrotation=90, labelsize=7)
+
+    if palette_map:
+        handles = [
+            Patch(facecolor=color, edgecolor="0.2", label=str(level))
+            for level, color in palette_map.items()
+        ]
+        figure_legend_outside(fig, handles=handles, title=color_g)
 
     apply_theme_to_figure(fig)
     return fig
@@ -76,7 +88,6 @@ def _draw_sample_boxes(
     color_g: str,
     palette_map: dict,
     default_color: str,
-    show_legend: bool,
 ) -> None:
     grouped = subset.groupby(sample_col, sort=False, observed=True, dropna=False)
     sample_hue = grouped[color_g].first()
@@ -117,13 +128,6 @@ def _draw_sample_boxes(
         hue = sample_hue.get(sample, sample_hue.iloc[0] if not sample_hue.empty else None)
         box.set_facecolor(palette_map.get(hue, default_color))
         box.set_edgecolor("0.2")
-
-    if show_legend and palette_map:
-        handles = [
-            Patch(facecolor=color, edgecolor="0.2", label=str(level))
-            for level, color in palette_map.items()
-        ]
-        ax.legend(handles=handles, title=color_g, frameon=False)
 
 
 def _summarize_qc_warning(df: pd.DataFrame, check_log: Mapping, color_g: str) -> pd.DataFrame:
