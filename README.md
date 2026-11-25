@@ -4,6 +4,7 @@
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/Olink-Proteomics/OlinkRPackage/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/Olink-Proteomics/OlinkRPackage/actions/workflows/R-CMD-check.yaml)
+[![Python CI](https://github.com/Olink-Proteomics/OlinkRPackage/actions/workflows/python-ci.yaml/badge.svg)](https://github.com/Olink-Proteomics/OlinkRPackage/actions/workflows/python-ci.yaml)
 [![lint](https://github.com/Olink-Proteomics/OlinkRPackage/actions/workflows/lint.yaml/badge.svg)](https://github.com/Olink-Proteomics/OlinkRPackage/actions/workflows/lint.yaml)
 [![Coverage](https://img.shields.io/badge/Coverage-92%25-green)](https://img.shields.io/badge/Coverage-92%25-green)
 [![CRAN
@@ -20,7 +21,54 @@ NPX data as exported by NPX Manager to various statistical tests and
 modelling, via different QC plot functions. Thereby providing a
 convenient pipeline for your Olink NPX data analysis.
 
+This repository now also ships a native **Python** package (`olinkanalyze`)
+that covers the README analysis pipeline: `read_npx`, `check_npx`,
+`clean_npx`, QC plots, bridge normalization, t-test, and volcano plots.
+The original R package remains in [`OlinkAnalyze/`](OlinkAnalyze/).
+
+## Python package
+
+```bash
+pip install -e ".[dev]"
+```
+
+```python
+import olinkanalyze as oa
+
+my_npx_data = oa.read_npx("path/to/my_NPX_data.csv")
+check_log = oa.check_npx(my_npx_data)
+npx_clean = oa.clean_npx(my_npx_data, check_log=check_log)
+
+oa.olink_dist_plot(npx_clean)
+oa.olink_qc_plot(npx_clean)
+
+bridge_samples = sorted(
+    set(oa.npx_data1["SampleID"]).intersection(oa.npx_data2["SampleID"])
+)
+bridge_samples = [s for s in bridge_samples if "CONTROL" not in s]
+
+normalized = oa.olink_normalization(
+    df1=oa.npx_data1,
+    df2=oa.npx_data2,
+    overlapping_samples_df1=bridge_samples,
+    df1_project_nr="20200001",
+    df2_project_nr="20200002",
+    reference_project="20200001",
+)
+
+ttest_results = oa.olink_ttest(npx_clean, variable="Treatment")
+oa.olink_volcano_plot(
+    ttest_results,
+    olinkid_list=ttest_results["OlinkID"].head(10),
+)
+```
+
+Long-format CSV/TSV, Excel, and Parquet files are supported. Wide qPCR
+exports, ZIP archives, mixed-model statistics, and cross-product
+normalization remain R-only in this first Python slice.
+
 ## Installation
+
 
 Olink® Analyze is available on CRAN:
 <https://cran.r-project.org/package=OlinkAnalyze>.
