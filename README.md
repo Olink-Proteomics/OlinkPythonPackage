@@ -28,6 +28,25 @@ The original R package remains in [`OlinkAnalyze/`](OlinkAnalyze/).
 
 ## Python package
 
+Create and activate a named conda/mamba environment. Conda writes `pip:` entries to a requirements file, so `--no-deps` cannot live in `environment.yml`; install the local package after the env exists:
+
+```bash
+mamba env create -f environment.yml
+mamba activate olinkanalyze
+pip install -e . --no-deps
+pytest
+```
+
+`conda env create -f environment.yml` works the same if you use conda instead of mamba. To place the env in `./.venv` instead of a named env:
+
+```bash
+mamba env create -f environment.yml -p ./.venv
+mamba activate ./.venv
+pip install -e . --no-deps
+```
+
+Alternatively, install into an existing Python environment:
+
 ```bash
 pip install -e ".[dev]"
 ```
