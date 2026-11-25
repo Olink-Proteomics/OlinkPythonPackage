@@ -157,8 +157,10 @@ def make_npx_data(project: str = "data1", seed: int = 1) -> pd.DataFrame:
         frame = pd.concat([frame, controls], ignore_index=True)
 
     from olinkanalyze.qc.check_npx import check_npx
+    from olinkanalyze.qc.column_names import categorize_npx_columns
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         log = check_npx(frame)
-    return attach_check_log(frame, log)
+    frame = categorize_npx_columns(frame, col_names=log["col_names"])
+    return attach_check_log(frame, log, copy=False)

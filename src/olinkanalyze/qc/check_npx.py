@@ -104,6 +104,10 @@ def _check_all_na_samples(df: pd.DataFrame, col_names: dict[str, str]) -> list[s
 
 
 def _pandas_class(series: pd.Series) -> str:
+    if isinstance(series.dtype, pd.CategoricalDtype):
+        if pd.api.types.is_numeric_dtype(series.cat.categories):
+            return "numeric"
+        return "character"
     if pd.api.types.is_numeric_dtype(series):
         return "numeric"
     if pd.api.types.is_string_dtype(series):

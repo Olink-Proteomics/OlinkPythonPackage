@@ -6,6 +6,7 @@ from olinkanalyze import check_npx, clean_npx, extract_check_log
 
 def test_check_npx_detects_invalid_oid(data1: pd.DataFrame):
     df = data1.copy()
+    df["OlinkID"] = df["OlinkID"].astype(str)
     df.loc[df.index[0], "OlinkID"] = "NOT_AN_OID"
     with pytest.warns(UserWarning, match="Unrecognized OlinkID"):
         log = check_npx(df)
@@ -30,6 +31,7 @@ def test_check_npx_detects_duplicate_sample_ids(data1: pd.DataFrame):
 
 def test_clean_npx_removes_invalid_oid_and_duplicates(data1: pd.DataFrame):
     df = data1.copy()
+    df["OlinkID"] = df["OlinkID"].astype(str)
     df.loc[df.index[0], "OlinkID"] = "BADID"
     cleaned = clean_npx(df)
     assert "BADID" not in set(cleaned["OlinkID"])

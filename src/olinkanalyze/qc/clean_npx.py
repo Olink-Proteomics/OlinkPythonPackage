@@ -18,6 +18,7 @@ from olinkanalyze._utils import (
     series_str_transform,
 )
 from olinkanalyze.qc.check_npx import check_npx
+from olinkanalyze.qc.column_names import drop_unused_categories
 
 
 def clean_npx(
@@ -76,7 +77,7 @@ def clean_npx(
             return df
         return attach_check_log(df, check_log)
 
-    out = df.loc[keep].copy()
+    out = drop_unused_categories(df.loc[keep].copy())
     if needs_types:
         out = _apply_col_class(out, class_rows)
     if needs_uniprot:
@@ -95,7 +96,7 @@ def prepare_plot_npx(
     out = df.loc[~df[oid_col].isin(drop_oids)].copy() if drop_oids else df.copy()
     if check_log.get("non_unique_uniprot"):
         out = _apply_nonunique_uniprot(out, check_log)
-    return out, check_log
+    return drop_unused_categories(out), check_log
 
 
 def _inform(verbose: bool, message: str) -> None:

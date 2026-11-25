@@ -11,6 +11,7 @@ import pandas as pd
 from olinkanalyze._constants import ACCEPTED_FIELD_SEP, ACCEPTED_NPX_FILE_EXT
 from olinkanalyze._utils import attach_check_log
 from olinkanalyze.qc.check_npx import check_npx
+from olinkanalyze.qc.column_names import categorize_npx_columns
 
 
 def read_npx(
@@ -42,8 +43,9 @@ def read_npx(
 
     if attach_log:
         check_log = check_npx(df, preferred_names=preferred_names)
-        df = attach_check_log(df, check_log)
-    return df
+        df = categorize_npx_columns(df, col_names=check_log["col_names"])
+        return attach_check_log(df, check_log, copy=False)
+    return categorize_npx_columns(df)
 
 
 def read_NPX(

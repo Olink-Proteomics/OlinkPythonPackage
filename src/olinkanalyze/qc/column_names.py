@@ -80,3 +80,54 @@ def resolve_column_names(
         )
 
     return selected
+
+
+_EXTRA_CATEGORY_COLUMNS = ("Treatment", "Subject", "Site", "Time", "Project")
+
+
+def categorize_npx_columns(
+    df: pd.DataFrame,
+    col_names: Mapping[str, str] | None = None,
+) -> pd.DataFrame:
+    """Convert repeated label columns to ``category`` dtypes.
+
+    Numeric quantification columns are left unchanged. ``check_npx`` should
+    run on the original dtypes first so QC type checks stay meaningful.
+    """
+    names: set[str] = set()
+    if col_names:
+        for key, name in col_names.items():
+            spec = COLUMN_SPEC_BY_KEY.get(key)
+            if spec and spec["col_class"] == "character":
+                names.add(name)
+    else:
+        for spec in COLUMN_NAME_DICT:
+            if spec["col_class"] == "character":
+                names.update(name for name in spec["col_names"] if name in df.columns)
+    names.update(name for name in _EXTRA_CATEGORY_COLUMNS if name in df.columns)
+
+    out = df
+    copied = False
+    for name in names:
+        series = out[name]
+        if isinstance(series.dtype, pd.CategoricalDtype):
+            continue
+        if pd.api.types.is_numeric_dtype(series):
+            continue
+        if not copied:
+            out = df.copy()
+            copied = True
+        out[name] = series.astype("category")
+    return out
+
+
+def drop_unused_categories(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop unused category levels after row filters."""
+    updates = {
+        name: df[name].cat.remove_unused_categories()
+        for name in df.columns
+        if isinstance(df[name].dtype, pd.CategoricalDtype)
+    }
+    if not updates:
+        return df
+    return df.assign(**updates)

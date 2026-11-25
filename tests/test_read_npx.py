@@ -21,6 +21,13 @@ def test_read_npx_long_csv():
     assert log["col_names"]["sample_id"] == "SampleID"
 
 
+def test_read_npx_uses_categories():
+    df = read_npx(load_example_csv())
+    for column in ("SampleID", "OlinkID", "Assay", "Panel", "QC_Warning"):
+        assert isinstance(df[column].dtype, pd.CategoricalDtype)
+    assert pd.api.types.is_numeric_dtype(df["NPX"])
+
+
 def test_read_npx_alias():
     df = read_NPX(load_example_csv())
     assert isinstance(df, pd.DataFrame)
