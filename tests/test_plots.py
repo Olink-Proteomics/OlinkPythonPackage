@@ -27,6 +27,15 @@ def test_dist_and_qc_plots_return_figures(data1):
     assert hasattr(qc, "_olink_qc_data")
 
 
+def test_dist_plot_one_box_per_sample(data1):
+    cleaned = clean_npx(data1)
+    fig = olink_dist_plot(cleaned)
+    panel = str(cleaned["Panel"].dropna().iloc[0]).replace("Olink ", "")
+    in_panel = cleaned["Panel"].astype(str).str.replace("Olink ", "", regex=False) == panel
+    n_samples = cleaned.loc[in_panel, "SampleID"].nunique()
+    assert len(fig.axes[0].patches) == n_samples
+
+
 def test_volcano_plot_from_ttest(data1):
     cleaned = clean_npx(data1)
     ttest = olink_ttest(cleaned, variable="Treatment")
