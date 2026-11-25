@@ -21,6 +21,7 @@ def test_check_npx_detects_all_na_assay(data1: pd.DataFrame):
     assert oid in log["assay_na"]
 
 
+@pytest.mark.filterwarnings("default::UserWarning")
 def test_check_npx_detects_duplicate_sample_ids(data1: pd.DataFrame):
     with pytest.warns(UserWarning, match="Duplicate SampleID"):
         log = check_npx(data1)

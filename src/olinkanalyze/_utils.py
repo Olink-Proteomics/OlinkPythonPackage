@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from collections.abc import Mapping
 from typing import Any
@@ -9,6 +10,9 @@ from typing import Any
 import pandas as pd
 
 from olinkanalyze._constants import CHECK_LOG_ATTR, CHECK_NPX_LST_NAMES
+
+LOGGER = logging.getLogger("olinkanalyze")
+LOGGER.addHandler(logging.NullHandler())
 
 
 def require_dataframe(df: Any, *, name: str = "df") -> pd.DataFrame:

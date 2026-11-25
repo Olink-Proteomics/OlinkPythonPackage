@@ -58,4 +58,5 @@ testpaths = ["tests"]
 addopts = "-q"
 filterwarnings = [
     "ignore::DeprecationWarning",
+    "ignore::UserWarning",
 ]

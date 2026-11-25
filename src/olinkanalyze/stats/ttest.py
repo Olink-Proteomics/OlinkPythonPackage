@@ -11,7 +11,7 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 
 from olinkanalyze._constants import OLINK_ID_PATTERN
-from olinkanalyze._utils import col, get_check_log, require_dataframe
+from olinkanalyze._utils import LOGGER, col, get_check_log, require_dataframe
 
 
 def olink_ttest(
@@ -74,11 +74,7 @@ def olink_ttest(
                 f"The grouping variable {variable} is neither factor nor character. "
                 "Only character and factor variable types allowed."
             )
-        warnings.warn(
-            f"Variable converted from character to factor: {variable}",
-            UserWarning,
-            stacklevel=2,
-        )
+        LOGGER.info("Variable converted from character to factor: %s", variable)
         levels = sorted(work[variable].dropna().astype(str).unique().tolist())
         work[variable] = pd.Categorical(work[variable].astype(str), categories=levels)
 
@@ -116,11 +112,7 @@ def olink_ttest(
 
     level1, level2 = levels
     if pair_id is None:
-        warnings.warn(
-            f"T-test is performed on {level1} - {level2}.",
-            UserWarning,
-            stacklevel=2,
-        )
+        LOGGER.info("T-test is performed on %s - %s.", level1, level2)
         rows = [
             _unpaired_row(
                 group,
@@ -138,11 +130,7 @@ def olink_ttest(
             for oid, group in work.groupby(oid_col, dropna=False)
         ]
     else:
-        warnings.warn(
-            f"Paired t-test is performed on {level1} - {level2}.",
-            UserWarning,
-            stacklevel=2,
-        )
+        LOGGER.info("Paired t-test is performed on %s - %s.", level1, level2)
         pair_counts = (
             work.dropna(subset=[variable]).groupby([oid_col, pair_id], dropna=False)[sample_col].nunique()
         )
