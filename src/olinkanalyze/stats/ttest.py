@@ -116,24 +116,21 @@ def olink_ttest(
         raise ValueError("No assays passing initial check. T-test will not be performed.")
 
     level1, level2 = levels
+    meta = _assay_meta(work, oid_col, assay_col, uniprot_col, panel_col)
     if pair_id is None:
         LOGGER.info("T-test is performed on %s - %s.", level1, level2)
-        rows = [
-            _unpaired_row(
-                group,
-                oid=oid,
-                level1=level1,
-                level2=level2,
-                variable=variable,
-                quant_col=quant_col,
-                assay_col=assay_col,
-                uniprot_col=uniprot_col,
-                panel_col=panel_col,
-                alternative=alternative,
-                confidence_level=confidence_level,
-            )
-            for oid, group in work.groupby(oid_col, dropna=False, sort=False)
-        ]
+        result = _welch_matrix(
+            work,
+            meta=meta,
+            oid_col=oid_col,
+            sample_col=sample_col,
+            quant_col=quant_col,
+            variable=variable,
+            level1=level1,
+            level2=level2,
+            alternative=alternative,
+            confidence_level=confidence_level,
+        )
     else:
         LOGGER.info("Paired t-test is performed on %s - %s.", level1, level2)
         pair_counts = (
@@ -148,25 +145,19 @@ def olink_ttest(
                 "Each pair identifier must identify no more than 2 unique samples. "
                 f"Check pairs: {', '.join(map(str, bad_pairs))}"
             )
-        rows = [
-            _paired_row(
-                group,
-                oid=oid,
-                level1=level1,
-                level2=level2,
-                variable=variable,
-                pair_id=pair_id,
-                quant_col=quant_col,
-                assay_col=assay_col,
-                uniprot_col=uniprot_col,
-                panel_col=panel_col,
-                alternative=alternative,
-                confidence_level=confidence_level,
-            )
-            for oid, group in work.groupby(oid_col, dropna=False, sort=False)
-        ]
+        result = _paired_matrix(
+            work,
+            meta=meta,
+            oid_col=oid_col,
+            pair_id=pair_id,
+            quant_col=quant_col,
+            variable=variable,
+            level1=level1,
+            level2=level2,
+            alternative=alternative,
+            confidence_level=confidence_level,
+        )
 
-    result = pd.DataFrame([row for row in rows if row is not None])
     if result.empty:
         raise ValueError("No assays passing initial check. T-test will not be performed.")
 
@@ -178,92 +169,163 @@ def olink_ttest(
     return result.sort_values("p.value", kind="mergesort").reset_index(drop=True)
 
 
-def _meta(group: pd.DataFrame, assay_col: str, uniprot_col: str, panel_col: str, oid: object) -> dict:
-    return {
-        "Assay": group[assay_col].iloc[0],
-        "OlinkID": oid,
-        "UniProt": group[uniprot_col].iloc[0],
-        "Panel": group[panel_col].iloc[0],
-    }
-
-
-def _unpaired_row(
-    group: pd.DataFrame,
-    *,
-    oid: object,
-    level1: str,
-    level2: str,
-    variable: str,
-    quant_col: str,
+def _assay_meta(
+    work: pd.DataFrame,
+    oid_col: str,
     assay_col: str,
     uniprot_col: str,
     panel_col: str,
+) -> pd.DataFrame:
+    return work.groupby(oid_col, sort=False, dropna=False).agg(
+        Assay=(assay_col, "first"),
+        UniProt=(uniprot_col, "first"),
+        Panel=(panel_col, "first"),
+    )
+
+
+def _result_frame(
+    meta: pd.DataFrame,
+    index,
+    *,
+    level1,
+    level2,
+    mean1: np.ndarray,
+    mean2: np.ndarray,
+    test,
+    confidence_level: float,
+    method: str,
+    alternative: str,
+) -> pd.DataFrame:
+    ci = test.confidence_interval(confidence_level=confidence_level)
+    out = meta.reindex(index).copy()
+    out["OlinkID"] = out.index
+    out["estimate"] = mean1 - mean2
+    out[str(level1)] = mean1
+    out[str(level2)] = mean2
+    out["statistic"] = np.asarray(test.statistic, dtype=float)
+    out["p.value"] = np.asarray(test.pvalue, dtype=float)
+    out["parameter"] = np.asarray(test.df, dtype=float)
+    out["conf.low"] = np.asarray(ci.low, dtype=float)
+    out["conf.high"] = np.asarray(ci.high, dtype=float)
+    out["method"] = method
+    out["alternative"] = alternative
+    columns = [
+        "Assay",
+        "OlinkID",
+        "UniProt",
+        "Panel",
+        "estimate",
+        str(level1),
+        str(level2),
+        "statistic",
+        "p.value",
+        "parameter",
+        "conf.low",
+        "conf.high",
+        "method",
+        "alternative",
+    ]
+    return out.loc[:, columns].reset_index(drop=True)
+
+
+def _welch_matrix(
+    work: pd.DataFrame,
+    *,
+    meta: pd.DataFrame,
+    oid_col: str,
+    sample_col: str,
+    quant_col: str,
+    variable: str,
+    level1,
+    level2,
     alternative: str,
     confidence_level: float,
-) -> dict | None:
-    g1 = group.loc[group[variable].astype(str) == str(level1), quant_col].dropna().to_numpy(dtype=float)
-    g2 = group.loc[group[variable].astype(str) == str(level2), quant_col].dropna().to_numpy(dtype=float)
-    if g1.size < 2 or g2.size < 2:
-        return None
-    test = stats.ttest_ind(g1, g2, equal_var=False, alternative=alternative)
-    ci = test.confidence_interval(confidence_level=confidence_level)
-    row = _meta(group, assay_col, uniprot_col, panel_col, oid)
-    row.update(
-        {
-            "estimate": float(np.mean(g1) - np.mean(g2)),
-            str(level1): float(np.mean(g1)),
-            str(level2): float(np.mean(g2)),
-            "statistic": float(test.statistic),
-            "p.value": float(test.pvalue),
-            "parameter": float(test.df),
-            "conf.low": float(ci.low),
-            "conf.high": float(ci.high),
-            "method": "Welch Two Sample t-test",
-            "alternative": alternative,
-        }
+) -> pd.DataFrame:
+    wide = work.pivot_table(
+        index=oid_col,
+        columns=sample_col,
+        values=quant_col,
+        aggfunc="mean",
+        observed=True,
     )
-    return row
+    sample_level = work.groupby(sample_col, sort=False, dropna=False)[variable].first()
+    aligned = sample_level.reindex(wide.columns)
+    x1 = wide.loc[:, aligned.astype(str) == str(level1)].to_numpy(dtype=float, copy=False)
+    x2 = wide.loc[:, aligned.astype(str) == str(level2)].to_numpy(dtype=float, copy=False)
+    n1 = np.isfinite(x1).sum(axis=1)
+    n2 = np.isfinite(x2).sum(axis=1)
+    ok = (n1 >= 2) & (n2 >= 2)
+    if not ok.any():
+        return pd.DataFrame()
+    test = stats.ttest_ind(
+        x1[ok],
+        x2[ok],
+        axis=1,
+        equal_var=False,
+        nan_policy="omit",
+        alternative=alternative,
+    )
+    return _result_frame(
+        meta,
+        wide.index[ok],
+        level1=level1,
+        level2=level2,
+        mean1=np.nanmean(x1[ok], axis=1),
+        mean2=np.nanmean(x2[ok], axis=1),
+        test=test,
+        confidence_level=confidence_level,
+        method="Welch Two Sample t-test",
+        alternative=alternative,
+    )
 
 
-def _paired_row(
-    group: pd.DataFrame,
+def _paired_matrix(
+    work: pd.DataFrame,
     *,
-    oid: object,
-    level1: str,
-    level2: str,
-    variable: str,
+    meta: pd.DataFrame,
+    oid_col: str,
     pair_id: str,
     quant_col: str,
-    assay_col: str,
-    uniprot_col: str,
-    panel_col: str,
+    variable: str,
+    level1,
+    level2,
     alternative: str,
     confidence_level: float,
-) -> dict | None:
-    wide = (
-        group.pivot_table(index=pair_id, columns=variable, values=quant_col, aggfunc="mean")
-        .reindex(columns=[level1, level2])
-        .dropna()
+) -> pd.DataFrame:
+    cell = work.pivot_table(
+        index=[oid_col, pair_id],
+        columns=variable,
+        values=quant_col,
+        aggfunc="mean",
+        observed=True,
+    ).reindex(columns=[level1, level2])
+    x = cell[level1].unstack(pair_id)
+    y = cell[level2].unstack(pair_id)
+    x, y = x.align(y, join="outer", axis=1)
+    x_arr = x.to_numpy(dtype=float)
+    y_arr = y.to_numpy(dtype=float)
+    both = np.isfinite(x_arr) & np.isfinite(y_arr)
+    x_arr = np.where(both, x_arr, np.nan)
+    y_arr = np.where(both, y_arr, np.nan)
+    ok = both.sum(axis=1) >= 2
+    if not ok.any():
+        return pd.DataFrame()
+    test = stats.ttest_rel(
+        x_arr[ok],
+        y_arr[ok],
+        axis=1,
+        nan_policy="omit",
+        alternative=alternative,
     )
-    if len(wide) < 2:
-        return None
-    x = wide[level1].to_numpy(dtype=float)
-    y = wide[level2].to_numpy(dtype=float)
-    test = stats.ttest_rel(x, y, alternative=alternative)
-    ci = test.confidence_interval(confidence_level=confidence_level)
-    row = _meta(group, assay_col, uniprot_col, panel_col, oid)
-    row.update(
-        {
-            "estimate": float(np.mean(x - y)),
-            str(level1): float(np.mean(x)),
-            str(level2): float(np.mean(y)),
-            "statistic": float(test.statistic),
-            "p.value": float(test.pvalue),
-            "parameter": float(test.df),
-            "conf.low": float(ci.low),
-            "conf.high": float(ci.high),
-            "method": "Paired t-test",
-            "alternative": alternative,
-        }
+    return _result_frame(
+        meta,
+        x.index[ok],
+        level1=level1,
+        level2=level2,
+        mean1=np.nanmean(x_arr[ok], axis=1),
+        mean2=np.nanmean(y_arr[ok], axis=1),
+        test=test,
+        confidence_level=confidence_level,
+        method="Paired t-test",
+        alternative=alternative,
     )
-    return row
