@@ -1,4 +1,4 @@
-"""Shared constants ported from OlinkAnalyze R internals."""
+"""Shared NPX column names, QC keys, and file-format constants."""
 
 from __future__ import annotations
 

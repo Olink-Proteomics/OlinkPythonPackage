@@ -1,4 +1,4 @@
-"""Synthetic NPX datasets matching the R npx_data1 / npx_data2 schema."""
+"""Synthetic NPX datasets used as ``npx_data1`` and ``npx_data2``."""
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ def make_npx_data(project: str = "data1", seed: int = 1) -> pd.DataFrame:
                 }
             )
 
-    # Duplicate control samples the way the R example data does.
+    # Duplicate control samples to match the bundled example datasets.
     frame = pd.DataFrame(rows)
     controls = frame.loc[frame["SampleID"].str.contains("CONTROL", case=False, na=False)]
     if not controls.empty:

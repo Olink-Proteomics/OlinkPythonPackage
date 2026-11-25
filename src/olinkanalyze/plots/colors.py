@@ -1,4 +1,4 @@
-"""Olink color palette (hex codes from the R package)."""
+"""Olink color palette."""
 
 from __future__ import annotations
 

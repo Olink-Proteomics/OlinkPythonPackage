@@ -21,8 +21,7 @@ def read_npx(
 ) -> pd.DataFrame:
     """Import a long-format Olink NPX file (CSV/TSV, Excel, or Parquet).
 
-    Wide qPCR layouts, ZIP archives, and the R legacy reader are not
-    supported in this Python slice.
+    Wide qPCR layouts and ZIP archives are not supported yet.
     """
     path = Path(filename)
     if not path.exists():
@@ -53,7 +52,7 @@ def read_NPX(
     *,
     attach_log: bool = True,
 ) -> pd.DataFrame:
-    """Alias for :func:`read_npx` matching the R function name."""
+    """Alias for :func:`read_npx`."""
     return read_npx(filename, preferred_names=preferred_names, attach_log=attach_log)
 
 

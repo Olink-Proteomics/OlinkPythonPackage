@@ -25,15 +25,15 @@ def olink_normalization(
 ) -> pd.DataFrame:
     """Normalize two Olink datasets.
 
-    This Python slice implements **bridge normalization** only: the
-    non-reference project is shifted by the per-assay median of pair-wise
-    NPX differences on overlapping samples.
+    Bridge normalization only: the non-reference project is shifted by
+    the per-assay median of pair-wise NPX differences on overlapping
+    samples.
     """
     if overlapping_samples_df2 is not None or reference_medians is not None:
         raise NotImplementedError(
             "Subset, intensity, reference-median, and cross-product "
-            "normalization are not implemented in this Python slice. "
-            "Provide overlapping_samples_df1 only for bridge normalization."
+            "normalization are not implemented. Provide overlapping_samples_df1 "
+            "only for bridge normalization."
         )
     if df2 is None:
         raise ValueError("df2 is required for bridge normalization.")

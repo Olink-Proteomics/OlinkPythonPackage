@@ -27,7 +27,7 @@ def olink_ttest(
 
     ``variable`` must have exactly two levels. Multiple-testing correction
     uses Benjamini-Hochberg FDR. The estimate is mean(level1) - mean(level2)
-    using sorted unique levels, matching R ``factor()`` on character data.
+    using sorted unique levels.
     """
     require_dataframe(df)
     if variable not in df.columns:

@@ -21,8 +21,8 @@ If applicable, add screenshots to help explain your problem.
 
 **System Information:**
  - OS: [e.g. Mac, Windows, Linux]
- - R Version
- - Package Information: (or paste sessionInfo() here)
+ - Python version
+ - Package version: (`import olinkanalyze as oa; print(oa.__version__)`)
 
 **Additional context**
 Add any other context about the problem here.

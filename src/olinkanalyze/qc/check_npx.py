@@ -41,7 +41,7 @@ def check_npx(
         "non_unique_uniprot": _check_nonunique_uniprot(df, col_names),
         "darid_invalid": _check_darid(df, col_names),
     }
-    # Keep a stable key order matching the R package.
+    # Keep a stable key order for check_log consumers.
     return {key: check_log[key] for key in CHECK_NPX_LST_NAMES}
 
 
