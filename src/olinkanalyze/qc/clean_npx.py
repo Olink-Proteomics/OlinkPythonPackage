@@ -8,7 +8,15 @@ from collections.abc import Mapping, Sequence
 import pandas as pd
 
 from olinkanalyze._constants import OLINK_ASSAY_TYPES, OLINK_SAMPLE_TYPES
-from olinkanalyze._utils import attach_check_log, col, get_check_log, require_dataframe
+from olinkanalyze._utils import (
+    attach_check_log,
+    col,
+    extract_check_log,
+    get_check_log,
+    require_dataframe,
+    series_str_contains,
+    series_str_transform,
+)
 from olinkanalyze.qc.check_npx import check_npx
 
 
@@ -31,18 +39,28 @@ def clean_npx(
     """Remove records that should not go into downstream analysis."""
     require_dataframe(df)
     check_log = get_check_log(df, check_log=check_log)
-    out = df.copy()
+    keep = pd.Series(True, index=df.index)
 
-    out = _clean_invalid_oid(out, check_log, remove_invalid_oid, verbose)
-    out = _clean_assay_na(out, check_log, remove_assay_na, verbose)
-    out = _clean_duplicate_sample_id(out, check_log, remove_dup_sample_id, verbose)
-    out = _clean_sample_type(out, check_log, remove_control_sample, verbose)
-    out = _clean_control_sample_id(out, check_log, control_sample_ids, verbose)
-    out = _clean_qc_warning(out, check_log, remove_qc_warning, verbose)
-    out = _clean_assay_type(out, check_log, remove_control_assay, verbose)
-    out = _clean_assay_warning(out, check_log, remove_assay_warning, verbose)
-    out = _clean_col_class(out, check_log, convert_df_cols, verbose)
-    out = _clean_nonunique_uniprot(out, check_log, convert_nonunique_uniprot, verbose)
+    keep &= _mask_invalid_oid(df, check_log, remove_invalid_oid, verbose)
+    keep &= _mask_assay_na(df, check_log, remove_assay_na, verbose)
+    keep &= _mask_duplicate_sample_id(df, check_log, remove_dup_sample_id, verbose)
+    keep &= _mask_sample_type(df, check_log, remove_control_sample, verbose)
+    keep &= _mask_control_sample_id(df, check_log, control_sample_ids, verbose)
+    keep &= _mask_qc_warning(df, check_log, remove_qc_warning, verbose)
+    keep &= _mask_assay_type(df, check_log, remove_control_assay, verbose)
+    keep &= _mask_assay_warning(df, check_log, remove_assay_warning, verbose)
+
+    class_rows = _col_class_rows(check_log) if convert_df_cols else []
+    needs_filter = not bool(keep.all())
+    needs_types = convert_df_cols and bool(class_rows)
+    needs_uniprot = convert_nonunique_uniprot and len(check_log["non_unique_uniprot"]) > 0
+
+    if not convert_df_cols:
+        _inform(verbose, "Skipping column type conversion.")
+    elif not class_rows:
+        _inform(verbose, "Columns are already in the expected format.")
+    if not needs_uniprot:
+        _inform(verbose, "Skipping or not needed: UniProt unification.")
 
     quant_name = str(check_log["col_names"].get("quant", ""))
     if "quantified" in quant_name.lower():
@@ -53,8 +71,31 @@ def clean_npx(
             stacklevel=2,
         )
 
-    updated_log = check_npx(out)
-    return attach_check_log(out, updated_log)
+    if not needs_filter and not needs_types and not needs_uniprot:
+        if extract_check_log(df) is not None:
+            return df
+        return attach_check_log(df, check_log)
+
+    out = df.loc[keep].copy()
+    if needs_types:
+        out = _apply_col_class(out, class_rows)
+    if needs_uniprot:
+        out = _apply_nonunique_uniprot(out, check_log)
+    return attach_check_log(out, check_npx(out), copy=False)
+
+
+def prepare_plot_npx(
+    df: pd.DataFrame,
+    check_log: Mapping | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Drop invalid OlinkIDs and all-NA assays without re-running ``check_npx``."""
+    check_log = get_check_log(df, check_log=check_log)
+    oid_col = col(check_log, "olink_id")
+    drop_oids = set(check_log.get("oid_invalid") or ()) | set(check_log.get("assay_na") or ())
+    out = df.loc[~df[oid_col].isin(drop_oids)].copy() if drop_oids else df.copy()
+    if check_log.get("non_unique_uniprot"):
+        out = _apply_nonunique_uniprot(out, check_log)
+    return out, check_log
 
 
 def _inform(verbose: bool, message: str) -> None:
@@ -62,30 +103,34 @@ def _inform(verbose: bool, message: str) -> None:
         warnings.warn(message, UserWarning, stacklevel=4)
 
 
-def _clean_invalid_oid(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.DataFrame:
+def _keep_all(df: pd.DataFrame) -> pd.Series:
+    return pd.Series(True, index=df.index)
+
+
+def _mask_invalid_oid(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.Series:
     if not enabled or len(check_log["oid_invalid"]) == 0:
         _inform(verbose, "Skipping or not needed: invalid OlinkID filter.")
-        return df
+        return _keep_all(df)
     oid_col = col(check_log, "olink_id")
-    return df.loc[~df[oid_col].isin(check_log["oid_invalid"])].copy()
+    return ~df[oid_col].isin(check_log["oid_invalid"])
 
 
-def _clean_assay_na(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.DataFrame:
+def _mask_assay_na(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.Series:
     if not enabled or len(check_log["assay_na"]) == 0:
         _inform(verbose, "Skipping or not needed: all-NA assay filter.")
-        return df
+        return _keep_all(df)
     oid_col = col(check_log, "olink_id")
-    return df.loc[~df[oid_col].isin(check_log["assay_na"])].copy()
+    return ~df[oid_col].isin(check_log["assay_na"])
 
 
-def _clean_duplicate_sample_id(
+def _mask_duplicate_sample_id(
     df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool
-) -> pd.DataFrame:
+) -> pd.Series:
     if not enabled or len(check_log["sample_id_dups"]) == 0:
         _inform(verbose, "Skipping or not needed: duplicate SampleID filter.")
-        return df
+        return _keep_all(df)
     sample_col = col(check_log, "sample_id")
-    return df.loc[~df[sample_col].isin(check_log["sample_id_dups"])].copy()
+    return ~df[sample_col].isin(check_log["sample_id_dups"])
 
 
 def _control_values(
@@ -113,132 +158,123 @@ def _control_values(
     return [value for key in known for value in type_map[key]]
 
 
-def _clean_sample_type(
+def _mask_sample_type(
     df: pd.DataFrame,
     check_log: Mapping,
     remove_control_sample: bool | Sequence[str],
     verbose: bool,
-) -> pd.DataFrame:
+) -> pd.Series:
     ctrl = _control_values(remove_control_sample, OLINK_SAMPLE_TYPES, "sample", "remove_control_sample")
     if not ctrl:
         _inform(verbose, "Skipping exclusion of control samples.")
-        return df
+        return _keep_all(df)
     if "sample_type" not in check_log["col_names"]:
         _inform(
             True,
             "No column marking control samples in dataset. "
             "Ensure exclusion of control samples for downstream analysis.",
         )
-        return df
+        return _keep_all(df)
     sample_type_col = col(check_log, "sample_type")
-    values = df[sample_type_col].astype(str).str.upper()
-    return df.loc[~values.isin({item.upper() for item in ctrl})].copy()
+    values = series_str_transform(df[sample_type_col], "upper")
+    return ~values.isin({item.upper() for item in ctrl})
 
 
-def _clean_assay_type(
+def _mask_assay_type(
     df: pd.DataFrame,
     check_log: Mapping,
     remove_control_assay: bool | Sequence[str],
     verbose: bool,
-) -> pd.DataFrame:
+) -> pd.Series:
     ctrl = _control_values(remove_control_assay, OLINK_ASSAY_TYPES, "assay", "remove_control_assay")
     if not ctrl:
         _inform(verbose, "Skipping exclusion of control assays.")
-        return df
+        return _keep_all(df)
     if "assay_type" not in check_log["col_names"]:
         _inform(
             True,
             "No column marking assay type in dataset. "
             "Ensure internal control assays are removed before analysis.",
         )
-        return df
+        return _keep_all(df)
     assay_type_col = col(check_log, "assay_type")
-    values = df[assay_type_col].astype(str).str.lower()
-    return df.loc[~values.isin({item.lower() for item in ctrl})].copy()
+    values = series_str_transform(df[assay_type_col], "lower")
+    return ~values.isin({item.lower() for item in ctrl})
 
 
-def _clean_control_sample_id(
+def _mask_control_sample_id(
     df: pd.DataFrame,
     check_log: Mapping,
     control_sample_ids: Sequence[str] | None,
     verbose: bool,
-) -> pd.DataFrame:
+) -> pd.Series:
     if not control_sample_ids:
         _inform(verbose, "No extra control SampleIDs requested.")
-        return df
+        return _keep_all(df)
     sample_col = col(check_log, "sample_id")
     present = df[sample_col].isin(list(control_sample_ids))
     if not present.any():
         _inform(verbose, "None of the requested control SampleIDs were present.")
-        return df
-    return df.loc[~present].copy()
+        return _keep_all(df)
+    return ~present
 
 
-def _clean_qc_warning(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.DataFrame:
+def _mask_qc_warning(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.Series:
     if not enabled:
         _inform(verbose, "Skipping exclusion of samples flagged FAIL.")
-        return df
+        return _keep_all(df)
     qc_col = col(check_log, "qc_warning")
-    fail = df[qc_col].astype(str).str.contains("fail", case=False, na=False)
+    fail = series_str_contains(df[qc_col], "fail", case=False)
     if not fail.any():
         _inform(verbose, "No samples flagged FAIL.")
-        return df
-    return df.loc[~fail].copy()
+        return _keep_all(df)
+    return ~fail
 
 
-def _clean_assay_warning(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.DataFrame:
+def _mask_assay_warning(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.Series:
     if not enabled:
         _inform(verbose, "Skipping exclusion of assays flagged WARN.")
-        return df
+        return _keep_all(df)
     if "assay_warn" not in check_log["col_names"]:
         _inform(
             True,
             "No column marking assay warnings in dataset. "
             "Ensure assays with QC warnings are removed before analysis.",
         )
-        return df
+        return _keep_all(df)
     warn_col = col(check_log, "assay_warn")
-    warn = df[warn_col].astype(str).str.contains("warn", case=False, na=False)
+    warn = series_str_contains(df[warn_col], "warn", case=False)
     if not warn.any():
         _inform(verbose, "No assays flagged WARN.")
-        return df
-    return df.loc[~warn].copy()
+        return _keep_all(df)
+    return ~warn
 
 
-def _clean_col_class(df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool) -> pd.DataFrame:
-    if not enabled:
-        _inform(verbose, "Skipping column type conversion.")
-        return df
+def _col_class_rows(check_log: Mapping) -> list[dict]:
     col_class = check_log["col_class"]
     if col_class is None or len(col_class) == 0:
-        _inform(verbose, "Columns are already in the expected format.")
-        return df
+        return []
     if isinstance(col_class, pd.DataFrame):
-        rows = col_class.to_dict(orient="records")
-    else:
-        rows = list(col_class)
-    out = df.copy()
+        return col_class.to_dict(orient="records")
+    return list(col_class)
+
+
+def _apply_col_class(df: pd.DataFrame, rows: list[dict]) -> pd.DataFrame:
     for row in rows:
         name = row["col_name"]
         expected = row["expected_col_class"]
         if expected == "numeric":
-            out[name] = pd.to_numeric(out[name], errors="coerce")
+            df[name] = pd.to_numeric(df[name], errors="coerce")
         elif expected == "character":
-            out[name] = out[name].astype(str)
-    return out
+            df[name] = df[name].astype(str)
+    return df
 
 
-def _clean_nonunique_uniprot(
-    df: pd.DataFrame, check_log: Mapping, enabled: bool, verbose: bool
-) -> pd.DataFrame:
-    if not enabled or len(check_log["non_unique_uniprot"]) == 0:
-        _inform(verbose, "Skipping or not needed: UniProt unification.")
-        return df
+def _apply_nonunique_uniprot(df: pd.DataFrame, check_log: Mapping) -> pd.DataFrame:
     oid_col = col(check_log, "olink_id")
     uniprot_col = col(check_log, "uniprot")
-    out = df.copy()
     for oid in check_log["non_unique_uniprot"]:
-        mask = out[oid_col] == oid
-        keep = out.loc[mask, uniprot_col].dropna().astype(str).iloc[0]
-        out.loc[mask, uniprot_col] = keep
-    return out
+        mask = df[oid_col] == oid
+        keep = df.loc[mask, uniprot_col].dropna().astype(str).iloc[0]
+        df.loc[mask, uniprot_col] = keep
+    return df

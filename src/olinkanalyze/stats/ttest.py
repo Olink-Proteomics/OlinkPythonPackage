@@ -41,7 +41,10 @@ def olink_ttest(
     uniprot_col = col(check_log, "uniprot")
     panel_col = col(check_log, "panel")
 
-    work = df.loc[df[oid_col].astype(str).map(lambda x: bool(OLINK_ID_PATTERN.match(x)))].copy()
+    oid_as_str = df[oid_col].astype(str)
+    unique_oids = pd.Index(oid_as_str.unique())
+    valid_oids = unique_oids[unique_oids.str.fullmatch(OLINK_ID_PATTERN.pattern, na=False)]
+    work = df.loc[oid_as_str.isin(valid_oids)].copy()
 
     missing_var = work[variable].isna()
     if missing_var.any():
@@ -83,7 +86,7 @@ def olink_ttest(
             f"The number of levels in the factor needs to be 2. Your factor has {len(levels)} levels."
         )
 
-    n_bad = work.groupby(sample_col, dropna=False)[variable].nunique(dropna=True).gt(1).sum()
+    n_bad = work.groupby(sample_col, dropna=False, sort=False)[variable].nunique(dropna=True).gt(1).sum()
     if n_bad:
         raise ValueError(
             f"There are {int(n_bad)} samples that do not have a unique level "
@@ -91,10 +94,12 @@ def olink_ttest(
         )
 
     assay_na = set(check_log.get("assay_na") or [])
+    tested = work.loc[~work[oid_col].isin(assay_na)]
     level_na = (
-        work.loc[~work[oid_col].isin(assay_na)]
-        .groupby([oid_col, variable], dropna=False)[quant_col]
-        .apply(lambda s: s.notna().sum() == 0)
+        tested[quant_col]
+        .isna()
+        .groupby([tested[oid_col], tested[variable]], dropna=False, sort=False)
+        .all()
     )
     skip_assays = set(level_na[level_na].index.get_level_values(oid_col).astype(str))
     if skip_assays:
@@ -127,12 +132,14 @@ def olink_ttest(
                 alternative=alternative,
                 confidence_level=confidence_level,
             )
-            for oid, group in work.groupby(oid_col, dropna=False)
+            for oid, group in work.groupby(oid_col, dropna=False, sort=False)
         ]
     else:
         LOGGER.info("Paired t-test is performed on %s - %s.", level1, level2)
         pair_counts = (
-            work.dropna(subset=[variable]).groupby([oid_col, pair_id], dropna=False)[sample_col].nunique()
+            work.dropna(subset=[variable])
+            .groupby([oid_col, pair_id], dropna=False, sort=False)[sample_col]
+            .nunique()
         )
         too_many = pair_counts[pair_counts > 2]
         if not too_many.empty:
@@ -156,7 +163,7 @@ def olink_ttest(
                 alternative=alternative,
                 confidence_level=confidence_level,
             )
-            for oid, group in work.groupby(oid_col, dropna=False)
+            for oid, group in work.groupby(oid_col, dropna=False, sort=False)
         ]
 
     result = pd.DataFrame([row for row in rows if row is not None])

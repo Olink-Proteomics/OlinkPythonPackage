@@ -14,7 +14,7 @@ from olinkanalyze._constants import (
     OUTDATED_DARID,
     OUTDATED_DARID_MIN_VERSION,
 )
-from olinkanalyze._utils import require_dataframe
+from olinkanalyze._utils import require_dataframe, series_str_contains
 from olinkanalyze.qc.column_names import resolve_column_names
 
 
@@ -50,8 +50,8 @@ def _series(df: pd.DataFrame, col_names: dict[str, str], key: str) -> pd.Series:
 
 
 def _check_olinkid(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
-    ids = _series(df, col_names, "olink_id").dropna().astype(str).unique()
-    invalid = sorted(oid for oid in ids if not OLINK_ID_PATTERN.match(oid))
+    ids = pd.Index(_series(df, col_names, "olink_id").dropna().unique()).astype(str)
+    invalid = sorted(ids[~ids.str.fullmatch(OLINK_ID_PATTERN.pattern, na=False)].tolist())
     if invalid:
         warnings.warn(
             f"Unrecognized OlinkID(s) detected: {invalid}. Consider running clean_npx().",
@@ -64,8 +64,8 @@ def _check_olinkid(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
 def _check_all_na_assays(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
     oid = col_names["olink_id"]
     quant = col_names["quant"]
-    na_share = df.groupby(oid, dropna=False)[quant].apply(lambda s: s.isna().all())
-    all_na = sorted(na_share[na_share].index.astype(str).tolist())
+    all_na_flag = df[quant].isna().groupby(df[oid], dropna=False, sort=False).all()
+    all_na = sorted(all_na_flag.index[all_na_flag].astype(str).tolist())
     if all_na:
         warnings.warn(
             f"{all_na} have {quant} = NA for all samples. Consider running clean_npx().",
@@ -78,7 +78,7 @@ def _check_all_na_assays(df: pd.DataFrame, col_names: dict[str, str]) -> list[st
 def _check_duplicate_sample_ids(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
     sample = col_names["sample_id"]
     oid = col_names["olink_id"]
-    counts = df.groupby([sample, oid], dropna=False).size()
+    counts = df.groupby([sample, oid], dropna=False, sort=False).size()
     duplicates = sorted({str(sample_id) for sample_id, _oid in counts[counts > 1].index})
     if duplicates:
         warnings.warn(
@@ -92,8 +92,8 @@ def _check_duplicate_sample_ids(df: pd.DataFrame, col_names: dict[str, str]) -> 
 def _check_all_na_samples(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
     sample = col_names["sample_id"]
     quant = col_names["quant"]
-    na_share = df.groupby(sample, dropna=False)[quant].apply(lambda s: s.isna().all())
-    all_na = sorted(na_share[na_share].index.astype(str).tolist())
+    all_na_flag = df[quant].isna().groupby(df[sample], dropna=False, sort=False).all()
+    all_na = sorted(all_na_flag.index[all_na_flag].astype(str).tolist())
     if all_na:
         warnings.warn(
             f"{all_na} have {quant} = NA for all assays. Consider running clean_npx().",
@@ -106,11 +106,11 @@ def _check_all_na_samples(df: pd.DataFrame, col_names: dict[str, str]) -> list[s
 def _pandas_class(series: pd.Series) -> str:
     if pd.api.types.is_numeric_dtype(series):
         return "numeric"
-    if pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
-        # object columns that are all strings count as character
-        if series.dropna().map(lambda x: isinstance(x, str)).all():
-            return "character"
-        if pd.api.types.is_string_dtype(series):
+    if pd.api.types.is_string_dtype(series):
+        return "character"
+    if pd.api.types.is_object_dtype(series):
+        uniques = series.dropna().unique()
+        if all(isinstance(value, str) for value in uniques):
             return "character"
     if pd.api.types.is_bool_dtype(series):
         return "other"
@@ -155,7 +155,7 @@ def _check_assay_qc(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
     warn_col = col_names["assay_warn"]
     flagged = (
         df.loc[
-            df[warn_col].astype(str).str.contains("warn", case=False, na=False),
+            series_str_contains(df[warn_col], "warn", case=False),
             col_names["olink_id"],
         ]
         .dropna()
@@ -177,7 +177,7 @@ def _check_assay_qc(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
 def _check_nonunique_uniprot(df: pd.DataFrame, col_names: dict[str, str]) -> list[str]:
     oid = col_names["olink_id"]
     uniprot = col_names["uniprot"]
-    n_ids = df[[oid, uniprot]].drop_duplicates().groupby(oid)[uniprot].nunique()
+    n_ids = df[[oid, uniprot]].drop_duplicates().groupby(oid, sort=False)[uniprot].nunique()
     dups = sorted(n_ids[n_ids > 1].index.astype(str).tolist())
     if dups:
         warnings.warn(

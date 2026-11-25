@@ -10,6 +10,13 @@ from olinkanalyze import (
 )
 
 
+def test_dist_and_qc_plots_on_uncleaned_data(data1):
+    dist = olink_dist_plot(data1)
+    qc = olink_qc_plot(data1)
+    assert isinstance(dist, Figure)
+    assert isinstance(qc, Figure)
+
+
 def test_dist_and_qc_plots_return_figures(data1):
     log = check_npx(data1)
     cleaned = clean_npx(data1, check_log=log)

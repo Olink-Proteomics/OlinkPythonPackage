@@ -55,6 +55,16 @@ def test_clean_npx_removes_fail_rows(data1: pd.DataFrame):
     assert not cleaned["QC_Warning"].astype(str).str.contains("fail", case=False).any()
 
 
+def test_clean_npx_skips_recheck_when_already_clean(data1: pd.DataFrame):
+    cleaned = clean_npx(data1)
+    again = clean_npx(cleaned)
+    assert again is cleaned
+    log = extract_check_log(again)
+    assert log is not None
+    assert log["oid_invalid"] == []
+    assert log["sample_id_dups"] == []
+
+
 def test_preferred_names_quant_column(data1: pd.DataFrame):
     df = data1.copy()
     df["PCNormalizedNPX"] = df["NPX"] + 1

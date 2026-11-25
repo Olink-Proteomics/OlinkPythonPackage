@@ -60,8 +60,13 @@ def _sanitize_check_log(check_log: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
-def attach_check_log(df: pd.DataFrame, check_log: Mapping[str, Any]) -> pd.DataFrame:
-    out = df.copy()
+def attach_check_log(
+    df: pd.DataFrame,
+    check_log: Mapping[str, Any],
+    *,
+    copy: bool = True,
+) -> pd.DataFrame:
+    out = df.copy() if copy else df
     out.attrs[CHECK_LOG_ATTR] = _sanitize_check_log(validate_check_log(check_log))
     return out
 
@@ -94,3 +99,19 @@ def col(check_log: Mapping[str, Any], key: str) -> str:
         return check_log["col_names"][key]
     except KeyError as exc:
         raise KeyError(f"Column key {key!r} is not available in check_log['col_names'].") from exc
+
+
+def series_str_contains(series: pd.Series, pat: str, *, case: bool = False) -> pd.Series:
+    """Vectorized ``str.contains`` evaluated on unique values, then mapped back."""
+    as_str = series.astype(str)
+    uniques = as_str.unique()
+    flags = pd.Index(uniques).str.contains(pat, case=case, na=False)
+    return as_str.map(dict(zip(uniques, flags, strict=True)))
+
+
+def series_str_transform(series: pd.Series, method: str) -> pd.Series:
+    """Apply a ``Series.str`` method on unique values, then map back."""
+    as_str = series.astype(str)
+    uniques = as_str.unique()
+    transformed = getattr(pd.Index(uniques).str, method)()
+    return as_str.map(dict(zip(uniques, transformed, strict=True)))

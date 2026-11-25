@@ -5,14 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.figure import Figure
 
-from olinkanalyze._utils import col, get_check_log, require_dataframe
+from olinkanalyze._utils import col, require_dataframe, series_str_contains
 from olinkanalyze.plots.colors import olink_pal
 from olinkanalyze.plots.theme import apply_theme_to_figure
-from olinkanalyze.qc.clean_npx import clean_npx
+from olinkanalyze.qc.clean_npx import prepare_plot_npx
 
 
 def olink_dist_plot(
@@ -22,21 +23,7 @@ def olink_dist_plot(
 ) -> Figure:
     """Boxplots of NPX versus SampleID, faceted by Panel."""
     require_dataframe(df)
-    check_log = get_check_log(df, check_log=check_log)
-    cleaned = clean_npx(
-        df,
-        check_log=check_log,
-        remove_assay_na=True,
-        remove_invalid_oid=True,
-        remove_dup_sample_id=False,
-        remove_control_assay=False,
-        remove_control_sample=False,
-        remove_qc_warning=False,
-        remove_assay_warning=False,
-        convert_nonunique_uniprot=True,
-        verbose=False,
-    )
-    check_log = get_check_log(cleaned)
+    cleaned, check_log = prepare_plot_npx(df, check_log=check_log)
     sample_col = col(check_log, "sample_id")
     quant_col = col(check_log, "quant")
     panel_col = col(check_log, "panel")
@@ -55,7 +42,7 @@ def olink_dist_plot(
 
     for ax, panel in zip(axes[0], panels, strict=False):
         subset = plot_df.loc[plot_df[panel_col] == panel]
-        order = subset.groupby(sample_col)[quant_col].median().sort_values().index.tolist()
+        order = subset.groupby(sample_col, sort=False)[quant_col].median().sort_values().index.tolist()
         sns.boxplot(
             data=subset,
             x=sample_col,
@@ -79,14 +66,14 @@ def olink_dist_plot(
 def _summarize_qc_warning(df: pd.DataFrame, check_log: Mapping, color_g: str) -> pd.DataFrame:
     sample_col = col(check_log, "sample_id")
     panel_col = col(check_log, "panel")
-    fail = df[color_g].astype(str).str.contains("fail|warn", case=False, na=False)
+    fail = series_str_contains(df[color_g], "fail|warn", case=False)
     summary = (
         df.assign(_fail=fail)
-        .groupby([sample_col, panel_col], dropna=False)["_fail"]
+        .groupby([sample_col, panel_col], dropna=False, sort=False)["_fail"]
         .any()
         .rename("_any_fail")
         .reset_index()
     )
     out = df.merge(summary, on=[sample_col, panel_col], how="left")
-    out[color_g] = out["_any_fail"].map(lambda x: "FAIL" if x else "PASS")
+    out[color_g] = np.where(out["_any_fail"], "FAIL", "PASS")
     return out.drop(columns=["_any_fail"])

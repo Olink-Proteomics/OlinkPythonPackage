@@ -10,10 +10,10 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.figure import Figure
 
-from olinkanalyze._utils import col, get_check_log, require_dataframe
+from olinkanalyze._utils import col, require_dataframe
 from olinkanalyze.plots.colors import olink_pal
 from olinkanalyze.plots.theme import apply_theme_to_figure
-from olinkanalyze.qc.clean_npx import clean_npx
+from olinkanalyze.qc.clean_npx import prepare_plot_npx
 
 
 def olink_qc_plot(
@@ -30,21 +30,7 @@ def olink_qc_plot(
 ) -> Figure:
     """Scatterplot of sample IQR versus median NPX, faceted by Panel."""
     require_dataframe(df)
-    check_log = get_check_log(df, check_log=check_log)
-    cleaned = clean_npx(
-        df,
-        check_log=check_log,
-        remove_assay_na=True,
-        remove_invalid_oid=True,
-        remove_dup_sample_id=False,
-        remove_control_assay=False,
-        remove_control_sample=False,
-        remove_qc_warning=False,
-        remove_assay_warning=False,
-        convert_nonunique_uniprot=True,
-        verbose=False,
-    )
-    check_log = get_check_log(cleaned)
+    cleaned, check_log = prepare_plot_npx(df, check_log=check_log)
     sample_col = col(check_log, "sample_id")
     quant_col = col(check_log, "quant")
     panel_col = col(check_log, "panel")
@@ -53,12 +39,13 @@ def olink_qc_plot(
 
     plot_df = cleaned.copy()
     plot_df[panel_col] = plot_df[panel_col].astype(str).str.replace("Olink ", "", regex=False)
-    grouped = plot_df.groupby([panel_col, sample_col], dropna=False)
+    grouped = plot_df.groupby([panel_col, sample_col], dropna=False, sort=False)
     summary = grouped.agg(
-        IQR=(quant_col, lambda s: float(s.quantile(0.75) - s.quantile(0.25))),
         sample_median=(quant_col, "median"),
-        **{color_g: (color_g, _first_non_null)},
-    ).reset_index()
+        **{color_g: (color_g, "first")},
+    )
+    summary["IQR"] = grouped[quant_col].quantile(0.75) - grouped[quant_col].quantile(0.25)
+    summary = summary.reset_index()
 
     def _limits(frame: pd.DataFrame) -> pd.DataFrame:
         med_mean = frame["sample_median"].mean()
@@ -82,7 +69,7 @@ def olink_qc_plot(
         return frame
 
     summary = pd.concat(
-        [_limits(group) for _, group in summary.groupby(panel_col, dropna=False)],
+        [_limits(group) for _, group in summary.groupby(panel_col, dropna=False, sort=False)],
         ignore_index=True,
     )
     panels = list(summary[panel_col].dropna().unique())
@@ -131,8 +118,3 @@ def olink_qc_plot(
     apply_theme_to_figure(fig)
     fig._olink_qc_data = summary  # type: ignore[attr-defined]
     return fig
-
-
-def _first_non_null(series: pd.Series) -> object:
-    nonempty = series.dropna()
-    return nonempty.iloc[0] if not nonempty.empty else pd.NA
