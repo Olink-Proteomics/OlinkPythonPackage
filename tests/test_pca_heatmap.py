@@ -1,0 +1,15 @@
+from matplotlib.figure import Figure
+
+from olinkanalyze import clean_npx, olink_heatmap_plot, olink_pca_plot
+
+
+def test_olink_pca_plot_returns_scores(data1):
+    fig = olink_pca_plot(clean_npx(data1), color_g="Treatment")
+    assert isinstance(fig, Figure)
+    assert hasattr(fig, "_olink_pca_scores")
+    assert {"PC1", "PC2"} <= set(fig._olink_pca_scores.columns)
+
+
+def test_olink_heatmap_plot_returns_figure(data1):
+    fig = olink_heatmap_plot(clean_npx(data1), n_assays=8)
+    assert isinstance(fig, Figure)

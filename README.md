@@ -74,8 +74,8 @@ oa.olink_volcano_plot(
 <img src="figures/example_volcanoplot.png" alt="Volcano plot" width="100%" />
 
 `read_npx` supports long-format CSV/TSV, Excel, and Parquet. Wide qPCR
-exports, ZIP archives, mixed-model statistics, and cross-product
-normalization are not implemented yet.
+exports, ZIP archives, mixed models, and cross-product normalization are
+not implemented yet.
 
 The package includes two example datasets, `npx_data1` and `npx_data2`,
 for exploring the API.
